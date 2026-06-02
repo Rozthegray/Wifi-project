@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Updated viewport to prevent accidental zooming on mobile devices -->
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Ultimate Network Lab Simulator - Group 5</title>
     <style>
         :root {
@@ -31,6 +32,7 @@
             display: flex;
             height: 100vh;
             overflow: hidden;
+            flex-direction: row; /* Default layout */
         }
 
         /* Dashboard UI */
@@ -113,6 +115,7 @@
             font-weight: 600;
             font-size: 0.8rem;
             transition: all 0.2s;
+            touch-action: manipulation; /* Improves touch response */
         }
         button:hover { background: var(--accent); color: #000; box-shadow: 0 0 10px var(--accent-glow); }
         button.danger { background: #7f1d1d; color: #fca5a5; }
@@ -150,6 +153,7 @@
             font-weight: bold;
             color: #fff;
             text-shadow: 1px 1px 2px #000;
+            touch-action: none; /* Crucial for custom dragging on mobile */
         }
         .entity:active { cursor: grabbing; transform: scale(1.05); z-index: 1000 !important; }
 
@@ -184,6 +188,26 @@
             100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
         }
 
+        /* --- Mobile Responsive Rules --- */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
+            }
+            #dashboard {
+                width: 100%;
+                height: 45vh; /* Take up top 45% of screen */
+                border-right: none;
+                border-bottom: 2px solid var(--accent);
+            }
+            #workspace {
+                height: 55vh; /* Take up bottom 55% of screen */
+                width: 100%;
+            }
+            .header { padding: 15px; }
+            .header h1 { font-size: 1rem; }
+            .panel-section { padding: 10px 15px; }
+        }
+
     </style>
 </head>
 <body>
@@ -197,7 +221,8 @@
         <div class="panel-section" style="flex-grow: 1;">
             <div class="section-title">Live Strength Meters</div>
             <div id="meters-container">
-                </div>
+                <!-- Meters injected via JS -->
+            </div>
         </div>
 
         <div class="panel-section">
@@ -215,8 +240,8 @@
 
     <div id="workspace">
         <canvas id="ray-canvas"></canvas>
-        <div id="ap" class="entity" style="left: 100px; top: 300px;">AP</div>
-        </div>
+        <div id="ap" class="entity">AP</div>
+    </div>
 
     <script>
         const workspace = document.getElementById('workspace');
@@ -247,6 +272,8 @@
 
         // --- DOM Generation & Initialization ---
         function initApp() {
+            const isMobile = window.innerWidth <= 768;
+
             // Create User Nodes and Meters
             students.forEach((student, index) => {
                 // 1. Create Canvas Entity
@@ -254,9 +281,13 @@
                 userEl.id = student.id;
                 userEl.className = 'entity user-node';
                 userEl.innerText = (index + 1).toString();
-                // Spread them out initially
-                userEl.style.left = `${500 + (index * 60)}px`;
-                userEl.style.top = `${150 + (index * 100)}px`;
+                
+                // Spread them out conditionally based on mobile or desktop widths
+                let startX = isMobile ? 50 + (index * 45) : 500 + (index * 60);
+                let startY = isMobile ? 40 + (index * 30) : 150 + (index * 100);
+                userEl.style.left = `${startX}px`;
+                userEl.style.top = `${startY}px`;
+                
                 workspace.appendChild(userEl);
                 users.push(userEl);
 
@@ -277,7 +308,7 @@
             });
 
             // Pre-populate some lab environment
-            buildInitialLab();
+            buildInitialLab(isMobile);
             resize();
         }
 
@@ -285,9 +316,12 @@
             const el = document.createElement('div');
             el.className = `entity ${type}`;
             
-            // Default center placement if coords not provided
-            el.style.left = x !== undefined ? `${x}px` : `${workspace.clientWidth / 2}px`;
-            el.style.top = y !== undefined ? `${y}px` : `${workspace.clientHeight / 2}px`;
+            // Default center placement if coords not provided, constrained to screen sizes
+            let defaultX = Math.min(workspace.clientWidth / 2, workspace.clientWidth - 50);
+            let defaultY = Math.min(workspace.clientHeight / 2, workspace.clientHeight - 50);
+            
+            el.style.left = x !== undefined ? `${x}px` : `${defaultX}px`;
+            el.style.top = y !== undefined ? `${y}px` : `${defaultY}px`;
 
             // Setup physics penalties
             if (type.includes('wall')) el.dataset.penalty = 18;
@@ -313,51 +347,90 @@
             triggerPhysicsUpdate();
         }
 
-        function buildInitialLab() {
-            // Walls forming a room corner
-            spawn('wall-h', 250, 100); spawn('wall-h', 430, 100);
-            spawn('wall-v', 250, 100); spawn('wall-v', 250, 280);
-            
-            // Cluster of desks and PCs
-            spawn('desk', 400, 300); spawn('pc', 425, 315); spawn('chair', 430, 360);
-            spawn('desk', 550, 300); spawn('pc', 575, 315); spawn('chair', 580, 360);
-            spawn('desk', 400, 450); spawn('pc', 425, 465); spawn('chair', 430, 510);
+        function buildInitialLab(isMobile) {
+            if (isMobile) {
+                // Tighter cluster for mobile screens
+                spawn('wall-h', 20, 100); 
+                spawn('wall-v', 20, 100);
+                
+                spawn('desk', 120, 150); spawn('pc', 145, 165); spawn('chair', 150, 210);
+                spawn('desk', 250, 150); spawn('pc', 275, 165); spawn('chair', 280, 210);
+                ap.style.left = '40px'; ap.style.top = '140px';
+            } else {
+                // Original wide cluster for desktop
+                spawn('wall-h', 250, 100); spawn('wall-h', 430, 100);
+                spawn('wall-v', 250, 100); spawn('wall-v', 250, 280);
+                
+                spawn('desk', 400, 300); spawn('pc', 425, 315); spawn('chair', 430, 360);
+                spawn('desk', 550, 300); spawn('pc', 575, 315); spawn('chair', 580, 360);
+                spawn('desk', 400, 450); spawn('pc', 425, 465); spawn('chair', 430, 510);
+                ap.style.left = '100px'; ap.style.top = '300px';
+            }
         }
 
-        // --- Drag and Drop Engine ---
+        // --- Multi-Platform Drag and Drop Engine ---
         let activeEl = null;
         let offsetX = 0, offsetY = 0;
         let isDragging = false;
 
-        workspace.addEventListener('mousedown', (e) => {
+        // Extracts coordinates cleanly for both Mouse and Touch
+        function getPointerPos(e) {
+            if (e.touches && e.touches.length > 0) {
+                return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        function handleDragStart(e) {
             const target = e.target.closest('.entity');
             if (target) {
                 activeEl = target;
                 isDragging = true;
                 const rect = activeEl.getBoundingClientRect();
                 const wsRect = workspace.getBoundingClientRect();
-                offsetX = e.clientX - rect.left;
-                offsetY = e.clientY - rect.top;
+                const pos = getPointerPos(e);
+                offsetX = pos.x - rect.left;
+                offsetY = pos.y - rect.top;
+                
+                // Prevent scrolling while trying to drag an element on mobile
+                if(e.type === 'touchstart') e.preventDefault();
             }
-        });
+        }
 
-        document.addEventListener('mousemove', (e) => {
+        function handleDragMove(e) {
             if (!isDragging || !activeEl) return;
+            if (e.type === 'touchmove') e.preventDefault(); // Lock scroll while dragging
             
             const wsRect = workspace.getBoundingClientRect();
-            let newX = e.clientX - wsRect.left - offsetX;
-            let newY = e.clientY - wsRect.top - offsetY;
+            const pos = getPointerPos(e);
+            
+            let newX = pos.x - wsRect.left - offsetX;
+            let newY = pos.y - wsRect.top - offsetY;
+            
+            // Constrain objects so they can't be dragged entirely off-screen
+            newX = Math.max(0, Math.min(newX, wsRect.width - activeEl.clientWidth));
+            newY = Math.max(0, Math.min(newY, wsRect.height - activeEl.clientHeight));
 
             activeEl.style.left = `${newX}px`;
             activeEl.style.top = `${newY}px`;
             
             triggerPhysicsUpdate();
-        });
+        }
 
-        document.addEventListener('mouseup', () => {
+        function handleDragEnd() {
             isDragging = false;
             activeEl = null;
-        });
+        }
+
+        // Apply to both Mouse and Touch
+        workspace.addEventListener('mousedown', handleDragStart);
+        workspace.addEventListener('touchstart', handleDragStart, { passive: false });
+
+        document.addEventListener('mousemove', handleDragMove);
+        document.addEventListener('touchmove', handleDragMove, { passive: false });
+
+        document.addEventListener('mouseup', handleDragEnd);
+        document.addEventListener('touchend', handleDragEnd);
 
         // --- Custom Physics & Raycasting Engine ---
         let physicsFrame = null;
