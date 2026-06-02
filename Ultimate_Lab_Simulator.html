@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Network Lab Simulator - Group 5</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --panel-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.5);
+            
+            /* Signal Colors */
+            --sig-exc: #22c55e;
+            --sig-good: #eab308;
+            --sig-fair: #f97316;
+            --sig-poor: #ef4444;
+        }
+
+        * { box-sizing: border-box; user-select: none; }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Dashboard UI */
+        #dashboard {
+            width: 380px;
+            background: var(--panel-bg);
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            z-index: 100;
+            box-shadow: 5px 0 25px rgba(0,0,0,0.5);
+        }
+
+        .header {
+            padding: 20px;
+            background: linear-gradient(to right, #0f172a, #1e293b);
+            border-bottom: 2px solid var(--accent);
+        }
+
+        .header h1 { margin: 0; font-size: 1.2rem; color: var(--accent); text-transform: uppercase; letter-spacing: 2px;}
+        .header p { margin: 5px 0 0 0; font-size: 0.8rem; color: var(--text-muted); }
+
+        .panel-section {
+            padding: 15px 20px;
+            border-bottom: 1px solid #334155;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 15px;
+        }
+
+        /* Live Meters */
+        .user-meter {
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #334155;
+            transition: all 0.2s;
+        }
+
+        .meter-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+        .user-name { font-weight: bold; font-size: 0.9rem; }
+        .dbm-readout { font-family: monospace; font-size: 1.1rem; font-weight: bold; }
+        
+        .bar-container {
+            width: 100%;
+            height: 8px;
+            background: #0f172a;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+        .bar-fill {
+            height: 100%;
+            width: 100%;
+            transition: width 0.1s, background-color 0.1s;
+        }
+        .status-text { font-size: 0.75rem; color: var(--text-muted); }
+
+        /* Controls */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        button {
+            background: #334155;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+        button:hover { background: var(--accent); color: #000; box-shadow: 0 0 10px var(--accent-glow); }
+        button.danger { background: #7f1d1d; color: #fca5a5; }
+        button.danger:hover { background: #ef4444; color: #fff; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+
+        /* Canvas & Physics Engine Workspace */
+        #workspace {
+            flex-grow: 1;
+            position: relative;
+            background-color: #020617;
+            background-image: 
+                radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 30px 30px;
+            overflow: hidden;
+        }
+
+        #ray-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Movable Objects */
+        .entity {
+            position: absolute;
+            cursor: grab;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            transition: transform 0.1s;
+            font-size: 10px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 1px 1px 2px #000;
+        }
+        .entity:active { cursor: grabbing; transform: scale(1.05); z-index: 1000 !important; }
+
+        .wall-v { width: 16px; height: 180px; background: #475569; border-radius: 4px; z-index: 50; border: 1px solid #94a3b8; }
+        .wall-h { width: 180px; height: 16px; background: #475569; border-radius: 4px; z-index: 50; border: 1px solid #94a3b8; }
+        
+        .desk { width: 90px; height: 50px; background: #78350f; border: 2px solid #b45309; border-radius: 4px; z-index: 20; color: rgba(255,255,255,0.5); }
+        .pc { width: 35px; height: 20px; background: #000; border: 2px solid #38bdf8; border-radius: 3px; z-index: 30; box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
+        .chair { width: 30px; height: 30px; background: #334155; border-radius: 50%; z-index: 10; border: 2px solid #1e293b; }
+
+        #ap {
+            width: 45px; height: 45px;
+            background: #1e1b4b;
+            border-radius: 50%;
+            border: 3px solid var(--accent);
+            box-shadow: 0 0 25px var(--accent-glow);
+            z-index: 100;
+            font-size: 14px;
+            animation: pulse 2s infinite;
+        }
+
+        .user-node {
+            width: 35px; height: 35px;
+            border-radius: 50%;
+            z-index: 100;
+            border: 2px solid #fff;
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(56, 189, 248, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="dashboard">
+        <div class="header">
+            <h1>Module 8 Lab</h1>
+            <p>Live Multi-Point Telemetry Engine</p>
+        </div>
+
+        <div class="panel-section" style="flex-grow: 1;">
+            <div class="section-title">Live Strength Meters</div>
+            <div id="meters-container">
+                </div>
+        </div>
+
+        <div class="panel-section">
+            <div class="section-title">Lab Equipment Spawner</div>
+            <div class="controls-grid">
+                <button onclick="spawn('desk')">+ Add Desk</button>
+                <button onclick="spawn('pc')">+ Add PC</button>
+                <button onclick="spawn('chair')">+ Add Chair</button>
+                <button onclick="spawn('wall-v')">+ Add Wall (V)</button>
+                <button onclick="spawn('wall-h')">+ Add Wall (H)</button>
+                <button class="danger" onclick="clearObstacles()">Clear Obstacles</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="workspace">
+        <canvas id="ray-canvas"></canvas>
+        <div id="ap" class="entity" style="left: 100px; top: 300px;">AP</div>
+        </div>
+
+    <script>
+        const workspace = document.getElementById('workspace');
+        const canvas = document.getElementById('ray-canvas');
+        const ctx = canvas.getContext('2d');
+        const ap = document.getElementById('ap');
+        const metersContainer = document.getElementById('meters-container');
+
+        // Core Data structures
+        const students = [
+            { id: 'user1', name: 'Ajao Princess', matric: 'F/HD/24/3410071' },
+            { id: 'user2', name: 'Oseni T.R', matric: 'F/HD/24/3410072' },
+            { id: 'user3', name: 'Olayinka Basit', matric: 'F/HD/24/3410073' },
+            { id: 'user4', name: 'Osemene Chibuzor', matric: 'F/HD/24/3410074' },
+            { id: 'user5', name: 'Dauda Aishat', matric: 'F/HD/24/3410075' }
+        ];
+
+        let obstacles = [];
+        let users = [];
+
+        // Resize Canvas to fit screen
+        function resize() {
+            canvas.width = workspace.clientWidth;
+            canvas.height = workspace.clientHeight;
+            triggerPhysicsUpdate();
+        }
+        window.addEventListener('resize', resize);
+
+        // --- DOM Generation & Initialization ---
+        function initApp() {
+            // Create User Nodes and Meters
+            students.forEach((student, index) => {
+                // 1. Create Canvas Entity
+                const userEl = document.createElement('div');
+                userEl.id = student.id;
+                userEl.className = 'entity user-node';
+                userEl.innerText = (index + 1).toString();
+                // Spread them out initially
+                userEl.style.left = `${500 + (index * 60)}px`;
+                userEl.style.top = `${150 + (index * 100)}px`;
+                workspace.appendChild(userEl);
+                users.push(userEl);
+
+                // 2. Create Live Meter UI
+                const meterHtml = `
+                    <div class="user-meter" id="meter-${student.id}">
+                        <div class="meter-header">
+                            <span class="user-name">#${index+1} ${student.name}</span>
+                            <span class="dbm-readout" id="readout-${student.id}">-- dBm</span>
+                        </div>
+                        <div class="bar-container">
+                            <div class="bar-fill" id="bar-${student.id}"></div>
+                        </div>
+                        <div class="status-text" id="status-${student.id}">Calculating...</div>
+                    </div>
+                `;
+                metersContainer.insertAdjacentHTML('beforeend', meterHtml);
+            });
+
+            // Pre-populate some lab environment
+            buildInitialLab();
+            resize();
+        }
+
+        function spawn(type, x, y) {
+            const el = document.createElement('div');
+            el.className = `entity ${type}`;
+            
+            // Default center placement if coords not provided
+            el.style.left = x !== undefined ? `${x}px` : `${workspace.clientWidth / 2}px`;
+            el.style.top = y !== undefined ? `${y}px` : `${workspace.clientHeight / 2}px`;
+
+            // Setup physics penalties
+            if (type.includes('wall')) el.dataset.penalty = 18;
+            else if (type === 'pc') el.dataset.penalty = 8;
+            else if (type === 'desk') el.dataset.penalty = 4;
+            else el.dataset.penalty = 0; // chairs don't block much
+            
+            if(type === 'desk') el.innerText = 'DESK';
+            if(type === 'pc') el.innerText = 'PC';
+
+            workspace.appendChild(el);
+            if (el.dataset.penalty > 0) obstacles.push(el);
+            
+            triggerPhysicsUpdate();
+            return el;
+        }
+
+        function clearObstacles() {
+            document.querySelectorAll('.entity').forEach(el => {
+                if (el.id !== 'ap' && !el.classList.contains('user-node')) el.remove();
+            });
+            obstacles = [];
+            triggerPhysicsUpdate();
+        }
+
+        function buildInitialLab() {
+            // Walls forming a room corner
+            spawn('wall-h', 250, 100); spawn('wall-h', 430, 100);
+            spawn('wall-v', 250, 100); spawn('wall-v', 250, 280);
+            
+            // Cluster of desks and PCs
+            spawn('desk', 400, 300); spawn('pc', 425, 315); spawn('chair', 430, 360);
+            spawn('desk', 550, 300); spawn('pc', 575, 315); spawn('chair', 580, 360);
+            spawn('desk', 400, 450); spawn('pc', 425, 465); spawn('chair', 430, 510);
+        }
+
+        // --- Drag and Drop Engine ---
+        let activeEl = null;
+        let offsetX = 0, offsetY = 0;
+        let isDragging = false;
+
+        workspace.addEventListener('mousedown', (e) => {
+            const target = e.target.closest('.entity');
+            if (target) {
+                activeEl = target;
+                isDragging = true;
+                const rect = activeEl.getBoundingClientRect();
+                const wsRect = workspace.getBoundingClientRect();
+                offsetX = e.clientX - rect.left;
+                offsetY = e.clientY - rect.top;
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging || !activeEl) return;
+            
+            const wsRect = workspace.getBoundingClientRect();
+            let newX = e.clientX - wsRect.left - offsetX;
+            let newY = e.clientY - wsRect.top - offsetY;
+
+            activeEl.style.left = `${newX}px`;
+            activeEl.style.top = `${newY}px`;
+            
+            triggerPhysicsUpdate();
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            activeEl = null;
+        });
+
+        // --- Custom Physics & Raycasting Engine ---
+        let physicsFrame = null;
+        
+        function triggerPhysicsUpdate() {
+            // Debounce to lock rendering to screen refresh rate
+            if (!physicsFrame) {
+                physicsFrame = requestAnimationFrame(calculateNetworkPhysics);
+            }
+        }
+
+        // Standard Math: Get center of DOM node
+        function getCenter(el) {
+            const rect = el.getBoundingClientRect();
+            const wsRect = workspace.getBoundingClientRect();
+            return {
+                x: rect.left - wsRect.left + (rect.width / 2),
+                y: rect.top - wsRect.top + (rect.height / 2)
+            };
+        }
+
+        // Standard Math: Check Line segment intersection with Box (AABB)
+        function lineIntersectsBox(x1, y1, x2, y2, boxEl) {
+            const rect = boxEl.getBoundingClientRect();
+            const ws = workspace.getBoundingClientRect();
+            
+            const bx = rect.left - ws.left;
+            const by = rect.top - ws.top;
+            const bw = rect.width;
+            const bh = rect.height;
+
+            // Simple raycast against 4 edges of the box
+            const intersect = (
+                lineIntersectsLine(x1,y1, x2,y2, bx,by, bx+bw,by) ||       // Top
+                lineIntersectsLine(x1,y1, x2,y2, bx,by+bh, bx+bw,by+bh) || // Bottom
+                lineIntersectsLine(x1,y1, x2,y2, bx,by, bx,by+bh) ||       // Left
+                lineIntersectsLine(x1,y1, x2,y2, bx+bw,by, bx+bw,by+bh)    // Right
+            );
+            return intersect;
+        }
+
+        function lineIntersectsLine(x1,y1, x2,y2, x3,y3, x4,y4) {
+            const uA = ((x4-x3)*(y1-y3) - (y4-y3)*(x1-x3)) / ((y4-y3)*(x2-x1) - (x4-x3)*(y2-y1));
+            const uB = ((x2-x1)*(y1-y3) - (y2-y1)*(x1-x3)) / ((y4-y3)*(x2-x1) - (x4-x3)*(y2-y1));
+            return (uA >= 0 && uA <= 1 && uB >= 0 && uB <= 1);
+        }
+
+        // Main Loop
+        function calculateNetworkPhysics() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const pAP = getCenter(ap);
+
+            // Clean up missing obstacles
+            obstacles = obstacles.filter(el => workspace.contains(el));
+
+            users.forEach(user => {
+                const pUser = getCenter(user);
+                
+                // 1. Calculate Base Free Space Path Loss (FSPL approximation)
+                const distancePx = Math.sqrt(Math.pow(pUser.x - pAP.x, 2) + Math.pow(pUser.y - pAP.y, 2));
+                const distanceMeters = Math.max(1, distancePx / 15); // Scale: 15px = 1m
+                let dBm = -20 - (20 * Math.log10(distanceMeters));
+
+                // 2. Raycast against all obstacles
+                let penalties = 0;
+                let hitItems = [];
+                obstacles.forEach(obs => {
+                    if (lineIntersectsBox(pAP.x, pAP.y, pUser.x, pUser.y, obs)) {
+                        penalties += parseInt(obs.dataset.penalty);
+                        if(obs.classList.contains('wall-v') || obs.classList.contains('wall-h')) hitItems.push('Wall');
+                        else if(obs.classList.contains('pc')) hitItems.push('PC');
+                        else if(obs.classList.contains('desk')) hitItems.push('Desk');
+                    }
+                });
+
+                dBm -= penalties;
+                dBm = Math.max(-100, Math.min(-10, Math.round(dBm))); // Clamp value
+
+                // 3. Determine Quality & Colors
+                let color, quality, percent;
+                if (dBm >= -50) { color = 'var(--sig-exc)'; quality = 'Excellent Connection'; percent = 100; }
+                else if (dBm >= -65) { color = 'var(--sig-good)'; quality = 'Good Connection'; percent = 75; }
+                else if (dBm >= -80) { color = 'var(--sig-fair)'; quality = 'Fair / Weak'; percent = 40; }
+                else { color = 'var(--sig-poor)'; quality = 'Poor / Dead Zone'; percent = 10; }
+
+                // 4. Update the Canvas (Draw lasers)
+                ctx.beginPath();
+                ctx.moveTo(pAP.x, pAP.y);
+                ctx.lineTo(pUser.x, pUser.y);
+                
+                ctx.strokeStyle = color;
+                if (dBm < -80) {
+                    ctx.setLineDash([5, 10]); // broken line for dead zones
+                    ctx.lineWidth = 1;
+                    ctx.globalAlpha = 0.3;
+                } else {
+                    ctx.setLineDash([]);
+                    ctx.lineWidth = Math.max(1, (percent/100) * 4); // thicker line for strong signal
+                    ctx.globalAlpha = Math.max(0.3, percent/100);
+                }
+                ctx.stroke();
+                ctx.globalAlpha = 1.0; // reset
+
+                // 5. Update DOM elements
+                user.style.backgroundColor = color;
+                
+                // Update Dashboard Meters
+                document.getElementById(`readout-${user.id}`).innerText = `${dBm} dBm`;
+                document.getElementById(`readout-${user.id}`).style.color = color;
+                document.getElementById(`bar-${user.id}`).style.width = `${percent}%`;
+                document.getElementById(`bar-${user.id}`).style.backgroundColor = color;
+                
+                let statusText = quality;
+                if (hitItems.length > 0) {
+                    // Count unique hits
+                    const counts = {};
+                    hitItems.forEach(i => counts[i] = (counts[i] || 0) + 1);
+                    const blocks = Object.entries(counts).map(([k,v]) => `${v}x ${k}`).join(', ');
+                    statusText += ` (Blocked by: ${blocks})`;
+                } else {
+                    statusText += ` (Clear Line of Sight)`;
+                }
+                document.getElementById(`status-${user.id}`).innerText = statusText;
+            });
+
+            physicsFrame = null; // Release frame lock
+        }
+
+        // Start
+        window.onload = initApp;
+
+    </script>
+</body>
+</html>
